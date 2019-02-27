@@ -3,6 +3,8 @@
 
 #include <Windows.h>
 #include <atomic>
+#include <condition_variable>
+#include <mutex>
 #include <QObject>
 #include <QString>
 #include <QMutex>
@@ -19,6 +21,7 @@ struct AVAudioFifo;
 struct AVFrame;
 struct SwsContext;
 struct SwrContext;
+struct AVDictionary;
 #ifdef __cplusplus
 };
 #endif
@@ -41,8 +44,11 @@ private:
 	void EncodeThreadProc();
 	//从视频输入流读取帧，写入fifobuf
 	void ScreenRecordThreadProc();
+	void SetEncoderParm();
 	void FlushDecoder();
 	void FlushEncoder();
+	void InitBuffer();
+	void Release();
 
 private:
 	QString				m_filePath;
@@ -56,15 +62,18 @@ private:
 	AVFormatContext		*m_oFmtCtx;
 	AVCodecContext		*m_vDecodeCtx;
 	AVCodecContext		*m_vEncodeCtx;
+	AVDictionary		*m_dict;
 	SwsContext			*m_swsCtx;
 	AVFifoBuffer		*m_vFifoBuf;
-
 	AVFrame				*m_vOutFrame;
 	uint8_t				*m_vOutFrameBuf;
-	int					m_vOutFrameSize;
+	int					m_vOutFrameSize;	//一个输出帧的字节
 	std::atomic_bool	m_stop;
-	CRITICAL_SECTION	m_vSection;
-	int					m_vFrameIndex;	//当前帧位置
-
 	bool				m_started;
+
+	//编码速度一般比采集速度慢，所以可以去掉m_cvNotEmpty
+	std::condition_variable m_cvNotFull;
+	std::condition_variable m_cvNotEmpty;
+	std::mutex				m_mtx;
+
 };
