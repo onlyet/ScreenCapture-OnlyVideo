@@ -52,10 +52,10 @@ void ScreenRecordImpl::Start()
 	{
 		m_started = true;
 		m_filePath = QStringLiteral("test.mp4");
-		//m_width = 1920;
-		//m_height = 1080;
-		m_width = 1440;
-		m_height = 900;
+		m_width = 1920;
+		m_height = 1080;
+		//m_width = 1440;
+		//m_height = 900;
 		m_fps = 30;
 		std::thread encodeThread(&ScreenRecordImpl::EncodeThreadProc, this);
 		encodeThread.detach();
