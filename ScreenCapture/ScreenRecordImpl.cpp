@@ -40,33 +40,55 @@ ScreenRecordImpl::ScreenRecordImpl(QObject * parent) :
 	, m_dict(nullptr)
 	, m_vFifoBuf(nullptr)
 	, m_swsCtx(nullptr)
-	, m_stop(false)
-	, m_started(false)
+	, m_state(RecordState::NotStarted)
 {
+}
+
+void ScreenRecordImpl::Init(const QVariantMap& map)
+{
+	m_filePath = map["filePath"].toString();
+	m_width = map["width"].toInt();
+	m_height = map["height"].toInt();
+	m_fps = map["fps"].toInt();
+
+	//m_filePath = QStringLiteral("test.mp4");
+	////m_width = 1920;
+	////m_height = 1080;
+	//m_width = 1440;
+	//m_height = 900;
+	//m_fps = 30;
 }
 
 void ScreenRecordImpl::Start()
 {
-	if (!m_started)
+	if (m_state == RecordState::NotStarted)
 	{
-		m_started = true;
-		m_filePath = QStringLiteral("test.wmv");
-		//m_width = 1920;
-		//m_height = 1080;
-		m_width = 1440;
-		m_height = 900;
-		m_fps = 30;
-		std::thread encodeThread(&ScreenRecordImpl::EncodeThreadProc, this);
-		encodeThread.detach();
+		qDebug() << "start record";
+		m_state = RecordState::Started;
+		std::thread recordThread(&ScreenRecordImpl::ScreenRecordThreadProc, this);
+		recordThread.detach();
+	}
+	else if (m_state == RecordState::Paused)
+	{
+		qDebug() << "continue record";
+		m_state = RecordState::Started;
+		m_cvNotPause.notify_one();
 	}
 }
 
-void ScreenRecordImpl::Finish()
+void ScreenRecordImpl::Pause()
 {
-	qDebug() << "stop record";
-	m_stop = true;
+	qDebug() << "pause record";
+	m_state = RecordState::Paused;
 }
 
+void ScreenRecordImpl::Stop()
+{
+	qDebug() << "stop record";
+	if (m_state == RecordState::Paused)
+		m_cvNotPause.notify_one();
+	m_state = RecordState::Stopped;
+}
 
 int ScreenRecordImpl::OpenVideo()
 {
@@ -200,7 +222,7 @@ int ScreenRecordImpl::OpenOutput()
 	return 0;
 }
 
-void ScreenRecordImpl::EncodeThreadProc()
+void ScreenRecordImpl::ScreenRecordThreadProc()
 {
 	int ret = -1;
 	//减小原子变量粒度
@@ -219,12 +241,12 @@ void ScreenRecordImpl::EncodeThreadProc()
 	InitBuffer();
 
 	//启动视频数据采集线程
-	std::thread screenRecord(&ScreenRecordImpl::ScreenRecordThreadProc, this);
+	std::thread screenRecord(&ScreenRecordImpl::ScreenAcquireThreadProc, this);
 	screenRecord.detach();
 
 	while (1)
 	{
-		if (m_stop && !done)
+		if (m_state == RecordState::Stopped && !done)
 			done = true;
 		if (done)
 		{
@@ -284,7 +306,7 @@ void ScreenRecordImpl::EncodeThreadProc()
 	qDebug() << "parent thread exit";
 }
 
-void ScreenRecordImpl::ScreenRecordThreadProc()
+void ScreenRecordImpl::ScreenAcquireThreadProc()
 {
 	int ret = -1;
 	AVPacket pkt = { 0 };
@@ -298,8 +320,13 @@ void ScreenRecordImpl::ScreenRecordThreadProc()
 	av_image_fill_arrays(newFrame->data, newFrame->linesize, newFrameBuf,
 		m_vEncodeCtx->pix_fmt, m_width, m_height, 1);
 
-	while (!m_stop)
+	while (m_state != RecordState::Stopped)
 	{
+		if (m_state == RecordState::Paused)
+		{
+			unique_lock<mutex> lk(m_mtxPause);
+			m_cvNotPause.wait(lk, [this] { return m_state != RecordState::Paused; });
+		}
 		if (av_read_frame(m_vFmtCtx, &pkt) < 0)
 		{
 			qDebug() << "video av_read_frame < 0";

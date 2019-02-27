@@ -216,9 +216,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="muxing.c" />
-    <ClCompile Include="resampling_audio.c" />
-    <ClCompile Include="ScreenCatureDemo.cpp" />
     <ClCompile Include="ScreenRecordImpl.cpp" />
     <ClCompile Include="ScreenRecordTest.cpp" />
   </ItemGroup>

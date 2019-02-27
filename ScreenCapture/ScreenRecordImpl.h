@@ -8,6 +8,7 @@
 #include <QObject>
 #include <QString>
 #include <QMutex>
+#include <QVariant>
 
 #ifdef	__cplusplus
 extern "C"
@@ -30,20 +31,30 @@ class ScreenRecordImpl : public QObject
 {
 	Q_OBJECT
 public:
-	ScreenRecordImpl(QObject * parent = Q_NULLPTR);
+	enum RecordState {
+		NotStarted,
+		Started,
+		Paused,
+		Stopped,
+		Unknown,
+	};
 
-	int OpenVideo();
-	int OpenOutput();
+	ScreenRecordImpl(QObject * parent = Q_NULLPTR);
+	//初始化视频参数
+	void Init(const QVariantMap& map);
 
 	private slots :
 	void Start();
-	void Finish();
+	void Pause();
+	void Stop();
 
 private:
 	//从fifobuf读取视频帧，编码写入输出流，生成文件
-	void EncodeThreadProc();
-	//从视频输入流读取帧，写入fifobuf
 	void ScreenRecordThreadProc();
+	//从视频输入流读取帧，写入fifobuf
+	void ScreenAcquireThreadProc();
+	int OpenVideo();
+	int OpenOutput();
 	void SetEncoderParm();
 	void FlushDecoder();
 	void FlushEncoder();
@@ -68,12 +79,12 @@ private:
 	AVFrame				*m_vOutFrame;
 	uint8_t				*m_vOutFrameBuf;
 	int					m_vOutFrameSize;	//一个输出帧的字节
-	std::atomic_bool	m_stop;
-	bool				m_started;
+	RecordState			m_state;
 
 	//编码速度一般比采集速度慢，所以可以去掉m_cvNotEmpty
 	std::condition_variable m_cvNotFull;
 	std::condition_variable m_cvNotEmpty;
 	std::mutex				m_mtx;
-
+	std::condition_variable m_cvNotPause;
+	std::mutex				m_mtxPause;
 };
