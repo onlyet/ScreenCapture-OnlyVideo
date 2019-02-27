@@ -217,3 +217,7 @@ ModelManifest.xml
 *.mp4
 *.yuv
 *.bgra
+*.avi
+*.wmv
+*.flv
+*.mkv

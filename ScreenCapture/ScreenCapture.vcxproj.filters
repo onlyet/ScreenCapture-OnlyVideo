@@ -30,9 +30,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="ScreenCatureDemo.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -40,12 +37,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ScreenRecordTest.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="muxing.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="resampling_audio.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
