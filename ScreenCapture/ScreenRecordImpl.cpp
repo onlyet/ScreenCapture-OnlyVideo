@@ -227,7 +227,6 @@ void ScreenRecordImpl::ScreenRecordThreadProc()
 	int ret = -1;
 	//减小原子变量粒度
 	bool done = false;
-	int64_t vCurPts = 0;
 	int vFrameIndex = 0;
 
 	av_register_all();
@@ -502,6 +501,7 @@ void ScreenRecordImpl::FlushEncoder()
 			qDebug() << "video avcodec_receive_packet failed, ret: " << ret;
 			return;
 		}
+		qDebug() << "flush succeed";
 		pkt.stream_index = m_vOutIndex;
 		av_packet_rescale_ts(&pkt, m_vEncodeCtx->time_base, m_oFmtCtx->streams[m_vOutIndex]->time_base);
 
