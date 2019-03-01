@@ -85,9 +85,10 @@ void ScreenRecordImpl::Pause()
 void ScreenRecordImpl::Stop()
 {
 	qDebug() << "stop record";
+	RecordState state = m_state;
+	m_state = RecordState::Stopped;
 	if (m_state == RecordState::Paused)
 		m_cvNotPause.notify_one();
-	m_state = RecordState::Stopped;
 }
 
 int ScreenRecordImpl::OpenVideo()

@@ -82,9 +82,9 @@ private:
 	RecordState			m_state;
 
 	//编码速度一般比采集速度慢，所以可以去掉m_cvNotEmpty
-	std::condition_variable m_cvNotFull;
-	std::condition_variable m_cvNotEmpty;
-	std::mutex				m_mtx;
-	std::condition_variable m_cvNotPause;
+	std::condition_variable m_cvNotFull;	//当fifoBuf满了，采集线程挂起
+	std::condition_variable m_cvNotEmpty;	//当fifoBuf空了，编码线程挂起
+	std::mutex				m_mtx;			//m_cvNotFull和m_cvNotEmpty共用这个mutex
+	std::condition_variable m_cvNotPause;	//当点击暂停的时候，采集线程挂起
 	std::mutex				m_mtxPause;
 };
