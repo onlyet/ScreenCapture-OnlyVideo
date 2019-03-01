@@ -30,7 +30,7 @@ struct AVDictionary;
 class ScreenRecordImpl : public QObject
 {
 	Q_OBJECT
-public:
+private:
 	enum RecordState {
 		NotStarted,
 		Started,
@@ -38,6 +38,7 @@ public:
 		Stopped,
 		Unknown,
 	};
+public:
 
 	ScreenRecordImpl(QObject * parent = Q_NULLPTR);
 	//初始化视频参数

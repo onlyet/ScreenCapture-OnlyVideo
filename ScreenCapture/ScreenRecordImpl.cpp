@@ -432,8 +432,6 @@ void ScreenRecordImpl::SetEncoderParm()
 void ScreenRecordImpl::FlushDecoder()
 {
 	int ret = -1;
-	AVPacket pkt = { 0 };
-	av_init_packet(&pkt);
 	int y_size = m_width * m_height;
 	AVFrame	*oldFrame = av_frame_alloc();
 	AVFrame *newFrame = av_frame_alloc();
@@ -445,10 +443,10 @@ void ScreenRecordImpl::FlushDecoder()
 		ret = avcodec_receive_frame(m_vDecodeCtx, oldFrame);
 		if (ret < 0)
 		{
-			av_packet_unref(&pkt);
 			if (ret == AVERROR(EAGAIN))
 			{
 				qDebug() << "flush EAGAIN avcodec_receive_frame";
+				ret = 1;
 				continue;
 			}
 			else if (ret == AVERROR_EOF)
@@ -492,6 +490,7 @@ void ScreenRecordImpl::FlushEncoder()
 			if (ret == AVERROR(EAGAIN))
 			{
 				qDebug() << "flush EAGAIN avcodec_receive_packet";
+				ret = 1;
 				continue;
 			}
 			else if (ret == AVERROR_EOF)
