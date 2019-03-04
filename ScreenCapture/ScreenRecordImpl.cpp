@@ -87,7 +87,7 @@ void ScreenRecordImpl::Stop()
 	qDebug() << "stop record";
 	RecordState state = m_state;
 	m_state = RecordState::Stopped;
-	if (m_state == RecordState::Paused)
+	if (state == RecordState::Paused)
 		m_cvNotPause.notify_one();
 }
 
@@ -476,7 +476,7 @@ void ScreenRecordImpl::FlushDecoder()
 
 void ScreenRecordImpl::FlushEncoder()
 {
-	int ret = -11;
+	int ret = -1;
 	AVPacket pkt = { 0 };
 	av_init_packet(&pkt);
 	ret = avcodec_send_frame(m_vEncodeCtx, nullptr);
