@@ -295,9 +295,13 @@ void ScreenRecordImpl::ScreenRecordThreadProc()
 
 			ret = av_interleaved_write_frame(m_oFmtCtx, &pkt);
 			if (ret == 0)
-				qDebug() << "Write video packet id: " << ++g_encodeFrameCnt;
+			{
+				//qDebug() << "Write video packet id: " << ++g_encodeFrameCnt;
+			}
 			else
+			{
 				qDebug() << "video av_interleaved_write_frame failed, ret:" << ret;
+			}
 			av_free_packet(&pkt);
 	}
 	FlushEncoder();
@@ -391,8 +395,8 @@ void ScreenRecordImpl::SetEncoderParm()
 		|| !QString::compare("mov", suffix, Qt::CaseInsensitive))
 	{
 		m_vEncodeCtx->codec_id = AV_CODEC_ID_H264;
-		m_vEncodeCtx->bit_rate = 800 * 1000;
-		m_vEncodeCtx->rc_max_rate = 800 * 1000;
+		m_vEncodeCtx->bit_rate = 1000 * 1000;
+		m_vEncodeCtx->rc_max_rate = 1000 * 1000;
 		//codec_ctx->rc_min_rate = 200 * 1000;
 		m_vEncodeCtx->rc_buffer_size = 500 * 1000;
 		/* 设置图像组层的大小, gop_size越大，文件越小 */
@@ -407,7 +411,8 @@ void ScreenRecordImpl::SetEncoderParm()
 		m_vEncodeCtx->qcompress = 0.6;	//0.5
 		av_dict_set(&m_dict, "profile", "high", 0);
 		// 通过--preset的参数调节编码速度和质量的平衡。
-		av_dict_set(&m_dict, "preset", "superfast", 0);
+		av_dict_set(&m_dict, "preset", "ultrafast", 0);
+		//av_dict_set(&m_dict, "preset", "superfast", 0);
 		av_dict_set(&m_dict, "threads", "0", 0);
 		av_dict_set(&m_dict, "crf", "26", 0);
 		// zerolatency: 零延迟，用在需要非常低的延迟的情况下，比如电视电话会议的编码
@@ -501,15 +506,19 @@ void ScreenRecordImpl::FlushEncoder()
 			qDebug() << "video avcodec_receive_packet failed, ret: " << ret;
 			return;
 		}
-		qDebug() << "flush succeed";
+		//qDebug() << "flush succeed";
 		pkt.stream_index = m_vOutIndex;
 		av_packet_rescale_ts(&pkt, m_vEncodeCtx->time_base, m_oFmtCtx->streams[m_vOutIndex]->time_base);
 
 		ret = av_interleaved_write_frame(m_oFmtCtx, &pkt);
 		if (ret == 0)
+		{
 			qDebug() << "flush Write video packet id: " << ++g_encodeFrameCnt;
+		}
 		else
+		{
 			qDebug() << "video av_interleaved_write_frame failed, ret:" << ret;
+		}
 		av_free_packet(&pkt);
 	}
 }
