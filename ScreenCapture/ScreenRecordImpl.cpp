@@ -22,7 +22,10 @@ extern "C"
 #include <fstream>
 #include <dshow.h>
 
+#include <chrono>
+
 using namespace std;
+using namespace std::chrono;
 
 //g_collectFrameCnt等于g_encodeFrameCnt证明编解码帧数一致
 int g_collectFrameCnt = 0;	//采集帧数
@@ -251,15 +254,24 @@ void ScreenRecordImpl::ScreenRecordThreadProc()
 		if (done)
 		{
 			lock_guard<mutex> lk(m_mtx);
-			if (av_fifo_size(m_vFifoBuf) < m_vOutFrameSize)
-				break;
+            //if (av_fifo_size(m_vFifoBuf) < m_vOutFrameSize)
+            if (av_fifo_size(m_vFifoBuf) < m_vOutFrameItemSize)
+            {
+                break;
+            }
 		}
 		{
 			std::unique_lock<mutex> lk(m_mtx);
-			m_cvNotEmpty.wait(lk, [this] {return av_fifo_size(m_vFifoBuf) >= m_vOutFrameSize; });
+            //m_cvNotEmpty.wait(lk, [this] {return av_fifo_size(m_vFifoBuf) >= m_vOutFrameSize; });
+            m_cvNotEmpty.wait(lk, [this] {return av_fifo_size(m_vFifoBuf) >= m_vOutFrameItemSize; });
 		}
+
+        long long timestamp;
+        av_fifo_generic_read(m_vFifoBuf, &timestamp, sizeof(long long), NULL);
 		av_fifo_generic_read(m_vFifoBuf, m_vOutFrameBuf, m_vOutFrameSize, NULL);
 		m_cvNotFull.notify_one();
+
+        m_tsList.push(timestamp);
 
 		//设置视频帧参数
 		//m_vOutFrame->pts = vFrameIndex * ((m_oFmtCtx->streams[m_vOutIndex]->time_base.den / m_oFmtCtx->streams[m_vOutIndex]->time_base.num) / m_fps);
@@ -268,9 +280,9 @@ void ScreenRecordImpl::ScreenRecordThreadProc()
 		m_vOutFrame->format = m_vEncodeCtx->pix_fmt;
 		m_vOutFrame->width = m_width;
 		m_vOutFrame->height = m_height;
+
 		AVPacket pkt = { 0 };
 		av_init_packet(&pkt);
-
 		ret = avcodec_send_frame(m_vEncodeCtx, m_vOutFrame);
 		if (ret != 0)
 		{
@@ -290,20 +302,36 @@ void ScreenRecordImpl::ScreenRecordThreadProc()
 			qDebug() << "video avcodec_receive_packet failed, ret: " << ret;
 			return;
 		}
-			pkt.stream_index = m_vOutIndex;
-			av_packet_rescale_ts(&pkt, m_vEncodeCtx->time_base, m_oFmtCtx->streams[m_vOutIndex]->time_base);
+        pkt.stream_index = m_vOutIndex;
 
-			ret = av_interleaved_write_frame(m_oFmtCtx, &pkt);
-			if (ret == 0)
-			{
-				//qDebug() << "Write video packet id: " << ++g_encodeFrameCnt;
-			}
-			else
-			{
-				qDebug() << "video av_interleaved_write_frame failed, ret:" << ret;
-			}
-			av_free_packet(&pkt);
-	}
+        if (m_tsList.empty())
+        {
+            qDebug() << "queue is empty!";
+        }
+        long long curTs = m_tsList.front();
+        m_tsList.pop();
+        long long duration = curTs - m_previousTimestamp;
+        m_previousTimestamp = curTs;
+        // pts设置为帧采集时间戳
+        pkt.pts = av_rescale_q(curTs, AVRational{ 1, 1000 }, m_oFmtCtx->streams[m_vOutIndex]->time_base);
+        pkt.dts = pkt.pts;
+        pkt.duration = av_rescale_q(duration, AVRational{ 1, 1000 }, m_oFmtCtx->streams[m_vOutIndex]->time_base);
+        //av_packet_rescale_ts(&pkt, m_vEncodeCtx->time_base, m_oFmtCtx->streams[m_vOutIndex]->time_base);
+
+        qDebug() << QString("pts: %1, dts: %2, duration: %3").arg(pkt.pts).arg(pkt.dts).arg(pkt.duration);
+
+        ret = av_interleaved_write_frame(m_oFmtCtx, &pkt);
+        if (ret == 0)
+        {
+            //qDebug() << "Write video packet id: " << ++g_encodeFrameCnt;
+            ++g_encodeFrameCnt;
+        }
+        else
+        {
+            qDebug() << "video av_interleaved_write_frame failed, ret:" << ret;
+        }
+        av_free_packet(&pkt);
+    }
 	FlushEncoder();
 	av_write_trailer(m_oFmtCtx);
 	Release();
@@ -336,6 +364,19 @@ void ScreenRecordImpl::ScreenAcquireThreadProc()
 			qDebug() << "video av_read_frame < 0";
 			continue;
 		}
+
+        static bool s_singleton = true;
+        if (s_singleton)
+        {
+            s_singleton = false;
+            m_firstTimePoint = chrono::steady_clock::now();
+            m_timestamp = 0;
+        }
+        else
+        {
+            m_timestamp = duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - m_firstTimePoint).count();
+        }
+
 		if (pkt.stream_index != m_vIndex)
 		{
 			qDebug() << "not a video packet from video input";
@@ -364,8 +405,13 @@ void ScreenRecordImpl::ScreenAcquireThreadProc()
 
 		{
 			unique_lock<mutex> lk(m_mtx);
-			m_cvNotFull.wait(lk, [this] { return av_fifo_space(m_vFifoBuf) >= m_vOutFrameSize; });
+			//m_cvNotFull.wait(lk, [this] { return av_fifo_space(m_vFifoBuf) >= m_vOutFrameSize; });
+            m_cvNotFull.wait(lk, [this] { return av_fifo_space(m_vFifoBuf) >= m_vOutFrameItemSize; });
 		}
+
+        // 先写入时间戳
+        av_fifo_generic_write(m_vFifoBuf, &m_timestamp, sizeof(m_timestamp), NULL);
+
 		av_fifo_generic_write(m_vFifoBuf, newFrame->data[0], y_size, NULL);
 		av_fifo_generic_write(m_vFifoBuf, newFrame->data[1], y_size / 4, NULL);
 		av_fifo_generic_write(m_vFifoBuf, newFrame->data[2], y_size / 4, NULL);
@@ -401,7 +447,8 @@ void ScreenRecordImpl::SetEncoderParm()
 		m_vEncodeCtx->rc_buffer_size = 500 * 1000;
 		/* 设置图像组层的大小, gop_size越大，文件越小 */
 		m_vEncodeCtx->gop_size = 30;
-		m_vEncodeCtx->max_b_frames = 3;
+        //m_vEncodeCtx->max_b_frames = 3;
+        m_vEncodeCtx->max_b_frames = 0;
 		/* 设置h264中相关的参数 */
 		m_vEncodeCtx->qmin = 10;	//2
 		m_vEncodeCtx->qmax = 31;	//31
@@ -445,6 +492,9 @@ void ScreenRecordImpl::FlushDecoder()
 	qDebug() << "flush avcodec_send_packet, ret: " << ret;
 	while (ret >= 0)
 	{
+        // FIXME: flush decoder的时候时间戳在哪里设置好？
+        m_timestamp = duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - m_firstTimePoint).count();
+
 		ret = avcodec_receive_frame(m_vDecodeCtx, oldFrame);
 		if (ret < 0)
 		{
@@ -470,6 +520,10 @@ void ScreenRecordImpl::FlushDecoder()
 			unique_lock<mutex> lk(m_mtx);
 			m_cvNotFull.wait(lk, [this] {return av_fifo_space(m_vFifoBuf) >= m_vOutFrameSize; });
 		}
+
+        // 先写入时间戳
+        av_fifo_generic_write(m_vFifoBuf, &m_timestamp, sizeof(m_timestamp), NULL);
+
 		av_fifo_generic_write(m_vFifoBuf, newFrame->data[0], y_size, NULL);
 		av_fifo_generic_write(m_vFifoBuf, newFrame->data[1], y_size / 4, NULL);
 		av_fifo_generic_write(m_vFifoBuf, newFrame->data[2], y_size / 4, NULL);
@@ -481,6 +535,7 @@ void ScreenRecordImpl::FlushDecoder()
 
 void ScreenRecordImpl::FlushEncoder()
 {
+    int flushFrameNum = 0;
 	int ret = -1;
 	AVPacket pkt = { 0 };
 	av_init_packet(&pkt);
@@ -506,14 +561,35 @@ void ScreenRecordImpl::FlushEncoder()
 			qDebug() << "video avcodec_receive_packet failed, ret: " << ret;
 			return;
 		}
-		//qDebug() << "flush succeed";
 		pkt.stream_index = m_vOutIndex;
-		av_packet_rescale_ts(&pkt, m_vEncodeCtx->time_base, m_oFmtCtx->streams[m_vOutIndex]->time_base);
+
+
+        if (m_tsList.empty())
+        {
+            qDebug() << "FlushEncoder queue is empty!";
+        }
+        long long curTs = m_tsList.front();
+        m_tsList.pop();
+
+        long long duration = curTs - m_previousTimestamp;
+        m_previousTimestamp = curTs;
+
+        // pts设置为帧采集时间戳
+        pkt.pts = av_rescale_q(curTs, AVRational{ 1, 1000 }, m_oFmtCtx->streams[m_vOutIndex]->time_base);
+        pkt.dts = pkt.pts;
+        pkt.duration = av_rescale_q(duration, AVRational{ 1, 1000 }, m_oFmtCtx->streams[m_vOutIndex]->time_base);
+
+		//av_packet_rescale_ts(&pkt, m_vEncodeCtx->time_base, m_oFmtCtx->streams[m_vOutIndex]->time_base);
+
+        qDebug() << QString("FlushEncoder, pts: %1, dts: %2, duration: %3").arg(pkt.pts).arg(pkt.dts).arg(pkt.duration);
+
 
 		ret = av_interleaved_write_frame(m_oFmtCtx, &pkt);
 		if (ret == 0)
 		{
-			qDebug() << "flush Write video packet id: " << ++g_encodeFrameCnt;
+			//qDebug() << "flush Write video packet id: " << ++g_encodeFrameCnt;
+            ++g_encodeFrameCnt;
+            ++flushFrameNum;
 		}
 		else
 		{
@@ -521,6 +597,8 @@ void ScreenRecordImpl::FlushEncoder()
 		}
 		av_free_packet(&pkt);
 	}
+    qDebug() << QString("Flush %1 frames").arg(flushFrameNum);
+    qDebug() << QString("Encode %1 frames").arg(g_encodeFrameCnt);
 }
 
 void ScreenRecordImpl::InitBuffer()
@@ -531,7 +609,10 @@ void ScreenRecordImpl::InitBuffer()
 	//先让AVFrame指针指向buf，后面再写入数据到buf
 	av_image_fill_arrays(m_vOutFrame->data, m_vOutFrame->linesize, m_vOutFrameBuf, m_vEncodeCtx->pix_fmt, m_width, m_height, 1);
 	//申请30帧缓存
-	if (!(m_vFifoBuf = av_fifo_alloc_array(30, m_vOutFrameSize)))
+	//if (!(m_vFifoBuf = av_fifo_alloc_array(30, m_vOutFrameSize)))
+    m_vOutFrameItemSize = (m_vOutFrameSize + sizeof(m_timestamp));
+    m_vFifoBuf = av_fifo_alloc(30 * m_vOutFrameItemSize);
+    if (!m_vFifoBuf)
 	{
 		qDebug() << "av_fifo_alloc_array failed";
 		return;

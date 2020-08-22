@@ -1,6 +1,4 @@
 #pragma once
-
-
 #include <Windows.h>
 #include <atomic>
 #include <condition_variable>
@@ -9,6 +7,9 @@
 #include <QString>
 #include <QMutex>
 #include <QVariant>
+#include <condition_variable>
+#include <chrono>
+#include <queue>
 
 #ifdef	__cplusplus
 extern "C"
@@ -79,7 +80,8 @@ private:
 	AVFifoBuffer		*m_vFifoBuf;
 	AVFrame				*m_vOutFrame;
 	uint8_t				*m_vOutFrameBuf;
-	int					m_vOutFrameSize;	//一个输出帧的字节
+	int					m_vOutFrameSize;	// yuv:3/2*width*height
+    int                 m_vOutFrameItemSize; // m_vOutFrameSize + sizeof(long long)
 	RecordState			m_state;
 
 	//编码速度一般比采集速度慢，所以可以去掉m_cvNotEmpty
@@ -88,4 +90,11 @@ private:
 	std::mutex				m_mtx;			//m_cvNotFull和m_cvNotEmpty共用这个mutex
 	std::condition_variable m_cvNotPause;	//当点击暂停的时候，采集线程挂起
 	std::mutex				m_mtxPause;
+
+    std::chrono::steady_clock::time_point    m_firstTimePoint;
+    long long                               m_timestamp;    // 相对时间戳，采集的第一帧为0
+
+    std::queue<long long> m_tsList; // 采集帧时间戳列表
+
+    long long m_previousTimestamp = 0; // 上一帧的时间戳
 };
