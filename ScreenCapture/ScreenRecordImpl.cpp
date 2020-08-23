@@ -27,6 +27,9 @@ extern "C"
 using namespace std;
 using namespace std::chrono;
 
+
+#define UseDshow 1
+
 //g_collectFrameCnt等于g_encodeFrameCnt证明编解码帧数一致
 int g_collectFrameCnt = 0;	//采集帧数
 int g_encodeFrameCnt = 0;	//编码帧数
@@ -97,17 +100,26 @@ void ScreenRecordImpl::Stop()
 int ScreenRecordImpl::OpenVideo()
 {
 	int ret = -1;
-	AVInputFormat *ifmt = av_find_input_format("gdigrab");
-	AVDictionary *options = nullptr;
-	AVCodec *decoder = nullptr;
-	//设置采集帧率
-	av_dict_set(&options, "framerate", QString::number(m_fps).toStdString().c_str(), NULL);
+    AVDictionary *options = nullptr;
+    AVCodec *decoder = nullptr;
+    //设置采集帧率
+    av_dict_set(&options, "framerate", QString::number(m_fps).toStdString().c_str(), NULL);
 
+#if UseDshow
+    AVInputFormat *ifmt = av_find_input_format("dshow");
+    if (avformat_open_input(&m_vFmtCtx, "video=screen-capture-recorder", ifmt, &options) != 0) {
+        printf("Couldn't open input stream.\n");
+        return -1;
+    }
+#else
+	AVInputFormat *ifmt = av_find_input_format("gdigrab");
 	if (avformat_open_input(&m_vFmtCtx, "desktop", ifmt, &options) != 0)
 	{
 		qDebug() << "Cant not open video input stream";
 		return -1;
 	}
+#endif
+
 	if (avformat_find_stream_info(m_vFmtCtx, nullptr) < 0)
 	{
 		qDebug() << "Couldn't find stream information";
